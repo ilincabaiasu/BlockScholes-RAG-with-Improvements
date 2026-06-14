@@ -30,6 +30,7 @@ _SECRET_KEYS = [
     "COHERE_API_KEY",
     "QDRANT_URL",
     "QDRANT_API_KEY",
+    "JUDGE_PROVIDER",
 ]
 # Accessing st.secrets raises StreamlitSecretNotFoundError when no secrets
 # file exists (e.g. local runs that use .env), so guard the whole block.

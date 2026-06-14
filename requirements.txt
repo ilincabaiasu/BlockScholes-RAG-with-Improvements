@@ -10,3 +10,7 @@ pydantic-settings>=2.0.0
 python-dotenv
 streamlit
 Pillow
+pdf2image
+pandas
+altair
+openpyxl
