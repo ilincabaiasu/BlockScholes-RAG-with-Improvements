@@ -123,7 +123,6 @@ async def test_enhanced_pipeline_with_visual_chunk():
     )
     mock_citations = ["Test Doc (2024-11-04)"]
     mock_citation_check = {"path": "text", "verified": [], "hallucinated": []}
-    mock_refined = (_gen_result(), False)
 
     with patch.object(ep, "clear_cache", new=MagicMock()), \
          patch.object(ep, "classify_query", new=AsyncMock(return_value="analytical")), \
@@ -138,7 +137,6 @@ async def test_enhanced_pipeline_with_visual_chunk():
          patch.object(ep, "generate", new=AsyncMock(return_value=mock_gen)), \
          patch.object(ep, "generate_from_page", new=AsyncMock(return_value=mock_visual_gen)), \
          patch.object(ep, "verify_citations", new=MagicMock(return_value=mock_citation_check)), \
-         patch.object(ep, "critique_and_refine", new=AsyncMock(return_value=mock_refined)), \
          patch.object(ep, "log_result", new=MagicMock()):
         result = await ep.run("What is IV?")
 

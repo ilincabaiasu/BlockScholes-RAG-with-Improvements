@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from google import genai
 from google.genai import types
-from google.genai.errors import ClientError
+from google.genai.errors import APIError, ClientError, ServerError
 
 from src.config.settings import settings
 from src.utils.logger import get_logger
@@ -26,15 +26,17 @@ gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 gemini_text = settings.GEMINI_MODEL
 gemini_vision = settings.GEMINI_VISION_MODEL
 
-# Gemini rate-limit exception predicate — ClientError is broader (all 4xx),
-# so we subclass to narrow it to HTTP 429 only.
+# Transient-error predicate for the retry wrapper. We retry HTTP 429 (rate
+# limit) and any 5xx (e.g. 503 "high demand", 500, 502, 504 — all transient
+# overload/availability errors). Other 4xx are real client errors: re-raise.
 class _RateLimitError(Exception):
     pass
 
 
-def _wrap_client_error(exc: ClientError) -> BaseException:
-    """Re-raise ClientError as _RateLimitError for HTTP 429 and 503."""
-    if exc.code in (429, 503):
+def _wrap_client_error(exc: APIError) -> BaseException:
+    """Re-raise transient API errors (429 / 5xx) as _RateLimitError to retry."""
+    code = getattr(exc, "code", None)
+    if code == 429 or (isinstance(code, int) and code >= 500):
         raise _RateLimitError(str(exc)) from exc
     raise exc
 
@@ -61,7 +63,7 @@ async def generate_text(
                     contents=prompt,
                     config=config,
                 )
-        except ClientError as exc:
+        except (ClientError, ServerError) as exc:
             _wrap_client_error(exc)
         _logger.info(
             "generate_text",
@@ -104,7 +106,7 @@ async def generate_vision(
                     contents=content,
                     config=config,
                 )
-        except ClientError as exc:
+        except (ClientError, ServerError) as exc:
             _wrap_client_error(exc)
         _logger.info(
             "generate_vision",
@@ -163,7 +165,7 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
                         model=settings.EMBEDDING_MODEL,
                         contents=b,
                     )
-            except ClientError as exc:
+            except (ClientError, ServerError) as exc:
                 _wrap_client_error(exc)
             _logger.info(
                 "embed_texts",

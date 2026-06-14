@@ -11,9 +11,28 @@ _logger = get_logger(__name__)
 # Cache keyed by (pdf_path, page_number) → PIL.Image.Image
 _render_cache: dict[tuple[str, int], object] = {}
 
+# Project root (…/rag), used to resolve PDFs whose stored absolute path is stale.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_RAW_DIR = os.path.join(_PROJECT_ROOT, "data", "raw")
+
 
 class PageRenderError(Exception):
     pass
+
+
+def _resolve_pdf_path(pdf_path: str) -> str | None:
+    """Return a usable path for ``pdf_path``, or None if it cannot be found.
+
+    The pdf_path stored in the index at index time is absolute, so it breaks if
+    the project directory is moved or renamed. When the stored path is missing,
+    fall back to the same filename under the current data/raw/ directory.
+    """
+    if os.path.isfile(pdf_path):
+        return pdf_path
+    candidate = os.path.join(_RAW_DIR, os.path.basename(pdf_path))
+    if os.path.isfile(candidate):
+        return candidate
+    return None
 
 
 def render_page(pdf_path: str, page_number: int) -> object:
@@ -29,10 +48,12 @@ def render_page(pdf_path: str, page_number: int) -> object:
     if cache_key in _render_cache:
         return _render_cache[cache_key]
 
-    if not os.path.isfile(pdf_path):
+    resolved = _resolve_pdf_path(pdf_path)
+    if resolved is None:
         raise PageRenderError(
             f"PDF not found: {pdf_path} — do not delete files from data/raw/"
         )
+    pdf_path = resolved
 
     t0 = time.perf_counter()
 

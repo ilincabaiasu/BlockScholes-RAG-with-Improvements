@@ -12,6 +12,7 @@ _logger = get_logger(__name__)
 async def fetch_parents(
     chunks: list[ScoredChunk],
     max_context_tokens: int | None = None,
+    use_parent: bool = True,
 ) -> list[ContextChunk]:
     """Build ContextChunk objects from reranked ScoredChunks.
 
@@ -25,6 +26,8 @@ async def fetch_parents(
     Args:
         chunks:             ScoredChunks sorted by reranker_score descending.
         max_context_tokens: Token budget; defaults to settings.MAX_CONTEXT_TOKENS.
+        use_parent:         When False (ablation), the hierarchical expansion is
+                            skipped and only the child-chunk text is used.
 
     Returns:
         List of ContextChunk objects in the same order.
@@ -36,8 +39,12 @@ async def fetch_parents(
     context_chunks: list[ContextChunk] = []
 
     for chunk in chunks:
-        # parent_text is pre-stored in the child payload at index time
-        parent_text = chunk.metadata.get("parent_text") or chunk.text
+        # parent_text is pre-stored in the child payload at index time. With
+        # parent fetching ablated, use the child text directly.
+        if use_parent:
+            parent_text = chunk.metadata.get("parent_text") or chunk.text
+        else:
+            parent_text = chunk.text
         parent_token_count = count_tokens(parent_text)
 
         if total_tokens + parent_token_count > max_context_tokens:

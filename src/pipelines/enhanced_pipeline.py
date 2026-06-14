@@ -4,6 +4,7 @@ import asyncio
 import uuid
 from datetime import datetime
 
+from src.ablation.config import FULL, AblationConfig
 from src.config.settings import settings
 from src.generation.context_assembler import assemble_context
 from src.generation.citation_verifier import verify_citations
@@ -27,7 +28,11 @@ from src.utils.timer import Timer
 _logger = get_logger(__name__)
 
 
-async def run(query: str, filters: dict | None = None) -> QueryResult:
+async def run(
+    query: str,
+    filters: dict | None = None,
+    config: AblationConfig | None = None,
+) -> QueryResult:
     """Run the full enhanced RAG pipeline.
 
     Includes query classification, scope detection, rewriting, hybrid retrieval
@@ -41,10 +46,16 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
     Args:
         query:   The user's question.
         filters: Optional Qdrant payload filters (doc_type, asset_class).
+        config:  Ablation flags. Defaults to FULL (every enhancement on), which
+                 reproduces the production behaviour. Passing a config with flags
+                 disabled is used by the ablation harness.
 
     Returns:
         A fully populated QueryResult logged to data/query_log.jsonl.
     """
+    if config is None:
+        config = FULL
+
     # 1. Initialise
     clear_cache()
     query_id = str(uuid.uuid4())[:8]
@@ -52,15 +63,28 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
 
     # 2. Classify + detect temporal scope (both pure/cheap, run first)
     with Timer("classify") as t:
-        query_type = await classify_query(query)
+        # Ablating classification falls back to "factual_lookup" + the vanilla
+        # baseline prompt, so a fully-disabled config reproduces the baseline
+        # pipeline's generation exactly (temp 0.0, BASELINE_SYSTEM_PROMPT).
+        query_type = await classify_query(query) if config.classify else "factual_lookup"
     latency["classify_ms"] = t.elapsed_ms
 
+    # Classification also selects the system prompt: enhanced when on, the
+    # vanilla baseline prompt when ablated.
+    prompt_variant = "enhanced" if config.classify else "baseline"
+
     scope = detect_scope(query)
-    params = scope_params(scope)
     target_period = extract_target_period(query)  # e.g. "2026-03" or None
-    ctx_top_k = params["context_top_k"]
-    reranker_top_k = params["reranker_top_k"]
-    max_ctx_tokens = params["max_context_tokens"]
+    # Scope-adaptive breadth, or static settings defaults when ablated.
+    if config.scope_adaptive:
+        params = scope_params(scope)
+        ctx_top_k = params["context_top_k"]
+        reranker_top_k = params["reranker_top_k"]
+        max_ctx_tokens = params["max_context_tokens"]
+    else:
+        ctx_top_k = settings.CONTEXT_TOP_K
+        reranker_top_k = settings.RERANKER_TOP_K
+        max_ctx_tokens = settings.MAX_CONTEXT_TOKENS
 
     _logger.info(
         "scope_params_applied",
@@ -72,23 +96,33 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
         },
     )
 
-    # 3. Rewrite
+    # 3. Rewrite — ablated to the original query only (no sub-query decomposition)
     with Timer("rewrite") as t:
-        rewrite_result = await rewrite_query(query)
-        rewritten = rewrite_result["rewritten_query"]
-        sub_queries = rewrite_result["sub_queries"]
+        if config.rewrite:
+            rewrite_result = await rewrite_query(query)
+            rewritten = rewrite_result["rewritten_query"]
+            sub_queries = rewrite_result["sub_queries"]
+        else:
+            rewritten = query
+            sub_queries = [query]
     latency["rewrite_ms"] = t.elapsed_ms
 
-    # 4. Hybrid retrieval across all sub-queries
+    # 4. Hybrid retrieval across all sub-queries. With hybrid ablated, only the
+    # dense arm runs and the sparse list stays empty (RRF then degenerates to
+    # dense-only ranking).
     with Timer("retrieve") as t:
         all_dense: list[ScoredChunk] = []
         all_sparse: list[ScoredChunk] = []
 
         for sq in sub_queries:
-            d_res, s_res = await asyncio.gather(
-                dense_search(sq, top_k=settings.DENSE_TOP_K, filters=filters),
-                sparse_search(sq, top_k=settings.SPARSE_TOP_K),
-            )
+            if config.hybrid:
+                d_res, s_res = await asyncio.gather(
+                    dense_search(sq, top_k=settings.DENSE_TOP_K, filters=filters),
+                    sparse_search(sq, top_k=settings.SPARSE_TOP_K),
+                )
+            else:
+                d_res = await dense_search(sq, top_k=settings.DENSE_TOP_K, filters=filters)
+                s_res = []
             all_dense.extend(d_res)
             all_sparse.extend(s_res)
 
@@ -111,22 +145,26 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
     # 5. RRF merge
     merged = rrf_merge(all_dense, all_sparse)
 
-    # 6. Rerank — fall back to RRF-sorted merged list if reranker returns empty
+    # 6. Rerank — fall back to RRF-sorted merged list if reranker returns empty.
+    # Ablated: skip the cross-encoder and keep the RRF/dense ordering.
     with Timer("rerank") as t:
-        try:
-            reranked = await rerank(rewritten, merged, top_k=reranker_top_k)
-        except Exception as exc:
-            _logger.warning("rerank_failed_fallback", extra={"error": str(exc)})
-            reranked = []
-        if not reranked:
-            _logger.warning("rerank_empty_fallback", extra={"merged_count": len(merged)})
+        if config.rerank:
+            try:
+                reranked = await rerank(rewritten, merged, top_k=reranker_top_k)
+            except Exception as exc:
+                _logger.warning("rerank_failed_fallback", extra={"error": str(exc)})
+                reranked = []
+            if not reranked:
+                _logger.warning("rerank_empty_fallback", extra={"merged_count": len(merged)})
+                reranked = merged[:reranker_top_k]
+        else:
             reranked = merged[:reranker_top_k]
     latency["rerank_ms"] = t.elapsed_ms
 
     # 6b. Temporal re-prioritisation — when the query targets a specific period
     # (e.g. "March 2026"), chunks from that period are moved to the front so
     # they are not displaced by higher-scoring but out-of-period articles.
-    if target_period:
+    if target_period and config.temporal_reprioritize:
         in_period = [
             c for c in reranked
             if target_period in c.metadata.get("published_date", "")
@@ -147,18 +185,25 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
 
     # 6c. Source diversity — cap chunks per document so no single article
     # dominates the context window. Preserves reranker score ordering.
-    _doc_counts: dict[str, int] = {}
-    diverse: list[ScoredChunk] = []
-    for chunk in reranked:
-        doc_id = chunk.metadata.get("doc_id", chunk.chunk_id)
-        if _doc_counts.get(doc_id, 0) < settings.MAX_CHUNKS_PER_DOC:
-            diverse.append(chunk)
-            _doc_counts[doc_id] = _doc_counts.get(doc_id, 0) + 1
-    reranked = diverse
+    if config.diversity_cap:
+        _doc_counts: dict[str, int] = {}
+        diverse: list[ScoredChunk] = []
+        for chunk in reranked:
+            doc_id = chunk.metadata.get("doc_id", chunk.chunk_id)
+            if _doc_counts.get(doc_id, 0) < settings.MAX_CHUNKS_PER_DOC:
+                diverse.append(chunk)
+                _doc_counts[doc_id] = _doc_counts.get(doc_id, 0) + 1
+        reranked = diverse
 
-    # 7. Visual routing
+    # 7. Visual routing — only for query types that benefit from charts.
+    # Definitional queries (e.g. "What is IV?") are answered from text alone:
+    # they need a concept, not chart values, and the text path already carries
+    # the visual chunks' text. Ablated (config.visual off): route nothing.
     with Timer("route") as t:
-        text_chunks, visual_chunks = route(reranked)
+        if config.visual and query_type != "definitional":
+            text_chunks, visual_chunks = route(reranked)
+        else:
+            text_chunks, visual_chunks = reranked, []
     latency["route_ms"] = t.elapsed_ms
 
     # 8. Text and visual paths in parallel
@@ -166,10 +211,12 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
     # visual chunk text content is never lost when rendering fails.
     async def text_path() -> tuple[GenerationResult, str, list[str]]:
         context_chunks = await fetch_parents(
-            reranked[:ctx_top_k], max_context_tokens=max_ctx_tokens
+            reranked[:ctx_top_k],
+            max_context_tokens=max_ctx_tokens,
+            use_parent=config.parent_fetch,
         )
         context_str, citations = assemble_context(context_chunks, max_context_tokens=max_ctx_tokens)
-        gen = await generate(context_str, query, query_type, "enhanced")
+        gen = await generate(context_str, query, query_type, prompt_variant)
         return gen, context_str, citations
 
     async def visual_path() -> tuple[list[GenerationResult], list[int]]:

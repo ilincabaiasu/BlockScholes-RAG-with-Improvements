@@ -19,6 +19,9 @@ venv/
 data/raw/
 data/*.jsonl
 
+# Generated ablation / evaluation outputs (trackers, sweep results, reports)
+data/ablation/
+
 # Processed per-document chunk files (large) — BM25 index files ARE committed
 data/processed/*_baseline_chunks.json
 data/processed/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json

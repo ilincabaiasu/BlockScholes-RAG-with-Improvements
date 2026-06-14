@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     RERANKER_MODEL: str = "rerank-english-v3.0"
     GENERATION_PROVIDER: str = "gemini"  # "gemini" | "openai"
+    # Ablation LLM judge. "openai" (gpt-4o) is the unbiased default — a different
+    # model from GENERATION_PROVIDER. "gemini" reuses the Gemini key but, when it
+    # matches the generation model, introduces self-grading bias (scores skew
+    # high/relative). The judge logs a warning whenever it self-grades.
+    JUDGE_PROVIDER: str = "openai"  # "openai" | "gemini"
 
     # Retrieval
     DENSE_TOP_K: int = 30
