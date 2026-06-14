@@ -1,0 +1,12 @@
+qdrant-client>=1.9.0
+openai
+google-genai>=1.0.0
+cohere>=5.0.0
+rank-bm25
+langchain-text-splitters
+tiktoken
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv
+streamlit
+Pillow

@@ -1,0 +1,35 @@
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Raw research PDFs and logs (not committed)
+data/raw/
+data/*.jsonl
+
+# Processed per-document chunk files (large) — BM25 index files ARE committed
+data/processed/*_baseline_chunks.json
+data/processed/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
+
+# Streamlit local secrets — add values via Streamlit Cloud UI instead
+.streamlit/secrets.toml
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+Thumbs.db
