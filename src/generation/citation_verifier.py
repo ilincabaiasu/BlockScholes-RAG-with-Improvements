@@ -44,9 +44,17 @@ def verify_citations(
 
     for title in found_titles:
         title_lower = title.lower()
-        # Match if either direction is a substring — handles cases where the
-        # model writes a longer title than the stored metadata (e.g. adds author)
-        if any(title_lower in c or c in title_lower for c in included_lower):
+        # Substring match in either direction, but require the matching part to
+        # be at least 12 characters so that short generic words like "report"
+        # or "commentary" don't trivially verify against any stored title.
+        def _matches(t: str, stored: str) -> bool:
+            if t in stored:
+                return len(t) >= 12
+            if stored in t:
+                return len(stored) >= 12
+            return False
+
+        if any(_matches(title_lower, c) for c in included_lower):
             verified.append(title)
         else:
             hallucinated.append(title)

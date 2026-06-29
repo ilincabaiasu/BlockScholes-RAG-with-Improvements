@@ -16,8 +16,10 @@ def is_visual_page(
       3. The text contains structural table markers: 3+ lines each with
          2+ pipe characters, OR 3+ lines each with 2+ tab characters.
     """
-    # Condition 1: embedded image present
-    if image_count >= 1:
+    # Condition 1: embedded image AND low text coverage.
+    # Requiring both prevents a per-page logo (common in Block Scholes PDFs)
+    # from flagging every page as visual when the page is otherwise text-dense.
+    if image_count >= 1 and text_area_fraction < settings.VISUAL_CONTENT_THRESHOLD:
         return True
 
     # Condition 2: sparse text coverage

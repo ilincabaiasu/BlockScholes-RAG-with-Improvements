@@ -49,16 +49,17 @@ async def fetch_parents(
 
         if total_tokens + parent_token_count > max_context_tokens:
             # Fall back to child text to stay within budget
+            child_token_count = count_tokens(chunk.text)
             used_text = chunk.text
-            total_tokens += count_tokens(chunk.text)
             _logger.info(
                 "truncated_to_child",
                 extra={
                     "chunk_id": chunk.chunk_id,
                     "parent_tokens": parent_token_count,
-                    "budget_remaining": max_context_tokens - total_tokens,
+                    "budget_remaining": max(0, max_context_tokens - total_tokens - child_token_count),
                 },
             )
+            total_tokens += child_token_count
         else:
             used_text = parent_text
             total_tokens += parent_token_count

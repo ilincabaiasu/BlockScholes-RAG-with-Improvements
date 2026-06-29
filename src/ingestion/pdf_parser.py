@@ -76,12 +76,16 @@ def _strip_repeated_headers_footers(pages_text: list[str]) -> list[str]:
     return result
 
 
-def parse_pdf(file_path: str) -> list[dict]:
-    """Parse a PDF and return one dict per page.
+def parse_pdf(file_path: str) -> tuple[list[dict], dict]:
+    """Parse a PDF and return (pages, pdf_metadata).
 
-    Each dict contains:
+    pages: one dict per page with keys:
         page_number (int, 1-indexed), text (str), image_count (int),
         text_area_fraction (float), pdf_path (str).
+
+    pdf_metadata: dict with keys title, author, creation_date extracted
+        from the PDF's embedded document properties (may be empty strings
+        if not set by the authoring tool).
 
     Raises:
         ParserError: if the file does not exist or every page is empty.
@@ -94,6 +98,12 @@ def parse_pdf(file_path: str) -> list[dict]:
     fallback_pages = 0
 
     fitz_doc = fitz.open(abs_path)
+    fitz_meta = fitz_doc.metadata or {}
+    pdf_metadata = {
+        "title": fitz_meta.get("title", "") or "",
+        "author": fitz_meta.get("author", "") or "",
+        "creation_date": fitz_meta.get("creationDate", "") or "",
+    }
     try:
         with pdfplumber.open(abs_path) as pdf:
             for page_obj in pdf.pages:
@@ -156,4 +166,4 @@ def parse_pdf(file_path: str) -> list[dict]:
         },
     )
 
-    return pages
+    return pages, pdf_metadata

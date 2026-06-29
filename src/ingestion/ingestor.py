@@ -28,8 +28,8 @@ def ingest_file(file_path: str) -> dict | None:
     NOTE: the source PDF in data/raw/ is never deleted — it is required
     by the visual page renderer at query time.
     """
-    # a. Parse PDF into page dicts
-    pages = parse_pdf(file_path)
+    # a. Parse PDF into page dicts + embedded document properties
+    pages, pdf_metadata = parse_pdf(file_path)
 
     # b. Clean each page and collect section titles
     cleaned_pages: list[str] = []
@@ -52,14 +52,19 @@ def ingest_file(file_path: str) -> dict | None:
         )
         return None
 
-    # e. Extract metadata
+    # e. Extract metadata — pass embedded PDF properties so the extractor can
+    #    prefer them over filename/in-text heuristics for title and date.
     metadata = extract_metadata(
         file_path=file_path,
         all_page_texts=cleaned_pages,
+        pdf_title_from_properties=pdf_metadata.get("title", ""),
+        pdf_author_from_properties=pdf_metadata.get("author", ""),
+        pdf_creation_date=pdf_metadata.get("creation_date", ""),
     )
 
-    # f. Build doc_id and ParsedDocument
-    doc_id = hashlib.sha256(full_text[:500].encode("utf-8")).hexdigest()[:16]
+    # f. Build doc_id and ParsedDocument — hash the full text so that
+    #    boilerplate-heavy reports with identical headers don't collide.
+    doc_id = hashlib.sha256(full_text.encode("utf-8")).hexdigest()[:16]
 
     page_visual_flags = [
         is_visual_page(page["text"], page["image_count"], page["text_area_fraction"])

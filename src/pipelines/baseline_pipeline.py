@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.config.settings import settings
 from src.generation.context_assembler import assemble_context
@@ -87,7 +87,7 @@ async def run(query: str, filters: dict | None = None) -> QueryResult:
         generation_provider=gen_result.provider,
         latency_breakdown=latency,
         visual_path_used=False,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
     )
 
     # 8. Log and return

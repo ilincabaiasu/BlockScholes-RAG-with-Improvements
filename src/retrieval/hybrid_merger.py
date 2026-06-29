@@ -19,6 +19,11 @@ def rrf_merge(
     """
     k = settings.RRF_K
 
+    # Drop any results with empty chunk_id — they would collide in rank dicts
+    # and corrupt fusion scores.
+    dense_results = [c for c in dense_results if c.chunk_id]
+    sparse_results = [c for c in sparse_results if c.chunk_id]
+
     # 1-indexed rank dicts
     dense_ranks = {c.chunk_id: i + 1 for i, c in enumerate(dense_results)}
     sparse_ranks = {c.chunk_id: i + 1 for i, c in enumerate(sparse_results)}
@@ -43,7 +48,8 @@ def rrf_merge(
 
         merged.append(replace(chunk, rrf_score=rrf_score))
 
-    merged.sort(key=lambda c: c.rrf_score, reverse=True)
+    # Secondary sort on chunk_id makes tie-breaking deterministic across runs.
+    merged.sort(key=lambda c: (c.rrf_score, c.chunk_id), reverse=True)
 
     _logger.info(
         "rrf_merge",

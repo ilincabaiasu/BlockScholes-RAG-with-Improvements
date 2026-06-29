@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.ablation.config import FULL, AblationConfig
 from src.config.settings import settings
@@ -292,7 +292,7 @@ async def run(
         latency_breakdown=latency,
         visual_path_used=len(available_visual) > 0,
         visual_pages_rendered=[vr.source_page for vr in available_visual],
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
     )
 
     # 13. Log and return

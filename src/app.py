@@ -259,6 +259,13 @@ ENHANCEMENT_TOGGLES = [
     ("visual",                "Visual page interpretation", "Render and interpret chart/image pages with the vision model."),
 ]
 
+# Map flag name → human-readable label (used for tooltip and tracker storage).
+_FLAG_TO_LABEL = {flag: label for flag, label, _ in ENHANCEMENT_TOGGLES}
+
+# Initialise in-session row accumulator on first load (persists across reruns).
+if "session_rows" not in st.session_state:
+    st.session_state["session_rows"] = []
+
 query = st.text_input(
     label="Ask a question",
     placeholder="e.g. What was Bitcoin implied volatility in November 2024?",
@@ -347,12 +354,25 @@ async def _judge_results(query: str, results: dict, enhanced_result) -> dict:
 
 def _record_qa(query: str, results: dict, scores: dict, enhanced_config) -> None:
     """Append judged Q&A scores (all three pipelines) to the live tracker."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     from src.ablation import tracker
 
-    disabled = enhanced_config.disabled()
-    enh_sig = "FULL" if not disabled else "no_" + "+".join(disabled)
-    batch_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    # Build a human-readable label of ENABLED feature names for the enhanced
+    # pipeline, so the tooltip shows what was on rather than what was off.
+    from dataclasses import fields as _dc_fields
+    enabled = [
+        _FLAG_TO_LABEL[f.name]
+        for f in _dc_fields(enhanced_config)
+        if f.name in _FLAG_TO_LABEL and getattr(enhanced_config, f.name)
+    ]
+    if len(enabled) == len(_FLAG_TO_LABEL):
+        enh_sig = "All enhancements"
+    elif enabled:
+        enh_sig = " · ".join(enabled)
+    else:
+        enh_sig = "No enhancements"
+
+    batch_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     rows = []
     for name, res in results.items():
@@ -380,6 +400,9 @@ def _record_qa(query: str, results: dict, scores: dict, enhanced_config) -> None
         })
     if rows:
         tracker.append_qa(rows)
+        # Accumulate in-session rows so the "This session" chart updates
+        # immediately without waiting for the Excel file to be re-read.
+        st.session_state["session_rows"].extend(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -467,12 +490,37 @@ def _pipeline_chart(runs_df):
     import altair as alt
 
     df = runs_df.copy()
-    df["latency_s"] = df["latency_ms"] / 1000.0
+    df["latency_s"] = (df["latency_ms"] / 1000.0).round(2)
+
+    # Build a human-readable "enhancements" column for the tooltip.
+    # Gemini and Baseline have empty enhanced_config; give them fixed labels.
+    def _enhancement_label(row):
+        if row["pipeline"] == "gemini":
+            return "No retrieval — raw model knowledge"
+        if row["pipeline"] == "baseline":
+            return "Dense retrieval · fixed chunks · vanilla prompt"
+        cfg = str(row.get("enhanced_config") or "")
+        return cfg if cfg else "All enhancements"
+    df["enhancements"] = df.apply(_enhancement_label, axis=1)
+
+    # Truncate long questions so the tooltip stays readable.
+    df["question_short"] = df["question"].apply(
+        lambda q: str(q)[:80] + ("…" if len(str(q)) > 80 else "")
+    )
+
     points = alt.Chart(df).mark_circle(size=150, opacity=0.7).encode(
         x=alt.X("latency_s:Q", title="Latency (s) →"),
         y=alt.Y("quality:Q", title="Judge quality / 100 →", scale=alt.Scale(domain=[0, 100])),
         color=alt.Color("pipeline:N", title="Pipeline", sort=["gemini", "baseline", "enhanced"]),
-        tooltip=["pipeline", "question", "quality", "latency_s", "grounding", "retrieval_pct"],
+        tooltip=[
+            alt.Tooltip("pipeline:N", title="Pipeline"),
+            alt.Tooltip("enhancements:N", title="Enhancements"),
+            alt.Tooltip("question_short:N", title="Question"),
+            alt.Tooltip("quality:Q", title="Quality /100"),
+            alt.Tooltip("latency_s:Q", title="Latency (s)"),
+            alt.Tooltip("grounding:Q", title="Grounding"),
+            alt.Tooltip("retrieval_pct:Q", title="Retrieval %"),
+        ],
     )
     return points.properties(height=420).interactive()
 
@@ -480,33 +528,52 @@ def _pipeline_chart(runs_df):
 st.divider()
 st.header("📈 Performance analysis")
 st.caption(
-    "Every question you ask above is scored by the LLM judge across all three pipelines and "
-    "accumulates here — so you can see whether Baseline and the (personalised) Enhanced "
-    "pipeline actually earn their extra latency over plain Gemini. "
-    "Data: `data/ablation/qa_tracker.xlsx`."
+    "Every question scores all three pipelines with the LLM judge. "
+    "Click any dot to see which enhancements were active for that run. "
+    "Upper-left is best: high quality, low latency."
 )
 
 from src.ablation import tracker as _tracker
+import pandas as pd
 
+# ---------------------------------------------------------------------------
+# This session
+# ---------------------------------------------------------------------------
+st.subheader("This session")
+_session_rows = st.session_state.get("session_rows", [])
+if not _session_rows:
+    st.info("Ask a question above — results appear here as soon as they're judged.")
+else:
+    _sess_df = pd.DataFrame(_session_rows)
+    st.altair_chart(_pipeline_chart(_sess_df), use_container_width=True)
+    st.caption(
+        f"{len(_sess_df)} judged answers across {_sess_df['question'].nunique()} "
+        f"question(s) this session."
+    )
+
+# ---------------------------------------------------------------------------
+# All time (historical)
+# ---------------------------------------------------------------------------
+st.subheader("All time")
 _qa = _tracker.load_qa()
 if _qa is None:
-    st.info("Ask a question above — once its answers are judged, the scores appear here.")
+    st.info("No historical data yet — scores accumulate in `data/ablation/qa_tracker.xlsx` as you use the app.")
 else:
-    runs = _qa["Runs"]
-    st.altair_chart(_pipeline_chart(runs), use_container_width=True)
+    _hist_runs = _qa["Runs"]
+    st.altair_chart(_pipeline_chart(_hist_runs), use_container_width=True)
     st.caption(
-        f"{len(runs)} judged answers across {runs['question'].nunique()} questions. "
-        "Upper-left is best (high quality, low latency)."
+        f"{len(_hist_runs)} judged answers across {_hist_runs['question'].nunique()} "
+        f"question(s) in total."
     )
     st.markdown("**Per-pipeline averages**")
     st.dataframe(_qa["Pipelines"], use_container_width=True, hide_index=True)
-
     if _qa["Enhanced_Configs"] is not None and not _qa["Enhanced_Configs"].empty:
-        with st.expander("Enhanced pipeline — quality by configuration (which switches were on)"):
+        with st.expander("Enhanced pipeline — quality by enhancement configuration"):
             st.dataframe(_qa["Enhanced_Configs"], use_container_width=True, hide_index=True)
 
-# Optional precise component/group ablation, populated from the CLI sweep:
-#   python -m src.ablation.runner --configs everything
+# ---------------------------------------------------------------------------
+# Deep ablation (CLI sweep only)
+# ---------------------------------------------------------------------------
 _abl = _tracker.load_tracker()
 if _abl is not None:
     with st.expander("🔬 Deep component & group ablation (from CLI sweep)"):

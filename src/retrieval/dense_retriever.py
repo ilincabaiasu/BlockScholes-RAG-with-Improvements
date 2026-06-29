@@ -75,9 +75,13 @@ async def dense_search(
     chunks: list[ScoredChunk] = []
     for r in response.points:
         p = r.payload or {}
+        chunk_id = p.get("chunk_id", "")
+        if not chunk_id:
+            _logger.warning("dense_result_missing_chunk_id", extra={"point_id": r.id})
+            continue
         chunks.append(
             ScoredChunk(
-                chunk_id=p.get("chunk_id", ""),
+                chunk_id=chunk_id,
                 text=p.get("text", ""),
                 parent_id=p.get("parent_id", ""),
                 metadata=p,

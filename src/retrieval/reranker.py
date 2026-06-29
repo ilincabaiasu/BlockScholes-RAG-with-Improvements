@@ -35,19 +35,26 @@ async def rerank(
 
     t0 = time.perf_counter()
 
-    documents = [c.text for c in candidates]
+    # Filter empty-text chunks before sending to Cohere — empty documents
+    # can be rejected by the API or scored arbitrarily.
+    valid = [(i, c) for i, c in enumerate(candidates) if c.text.strip()]
+    if not valid:
+        return []
+    original_indices, valid_candidates = zip(*valid)
+    documents = [c.text for c in valid_candidates]
 
     response = await rerank_with_retry(
         query=query,
         documents=documents,
-        top_n=len(candidates),
+        top_n=len(valid_candidates),
         model=settings.RERANKER_MODEL,
     )
 
-    # Map reranker results back to ScoredChunk objects by index
+    # Map reranker results back to the original candidates list via the index
+    # into valid_candidates (which excludes empty-text chunks).
     scored: list[ScoredChunk] = []
     for result in response.results:
-        chunk = candidates[result.index]
+        chunk = valid_candidates[result.index]
         scored.append(replace(chunk, reranker_score=result.relevance_score))
 
     # Filter by minimum score

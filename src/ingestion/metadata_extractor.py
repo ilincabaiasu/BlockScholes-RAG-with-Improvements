@@ -15,7 +15,7 @@ _MONTH_MAP = {
     "september": "09", "october": "10", "november": "11", "december": "12",
     "jan": "01", "feb": "02", "mar": "03", "apr": "04",
     "jun": "06", "jul": "07", "aug": "08",
-    "sep": "09", "oct": "10", "nov": "11", "dec": "12",
+    "sep": "09", "sept": "09", "oct": "10", "nov": "11", "dec": "12",
 }
 
 
@@ -52,7 +52,7 @@ def _parse_date_string(text: str) -> str | None:
     # Month DD, YYYY  e.g. "November 4, 2024" or "Nov 4, 2024"
     m = re.search(
         r"(january|february|march|april|may|june|july|august|september|"
-        r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)"
+        r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)"
         r"[\s.]+(\d{1,2})[,\s]+(\d{4})",
         text,
         re.IGNORECASE,
@@ -69,7 +69,7 @@ def _parse_date_string(text: str) -> str | None:
     # DD Month YYYY  e.g. "4 November 2024"
     m = re.search(
         r"(\d{1,2})[\s.]+(january|february|march|april|may|june|july|august|"
-        r"september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|"
+        r"september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|"
         r"oct|nov|dec)[\s.,]+(\d{4})",
         text,
         re.IGNORECASE,
@@ -110,7 +110,9 @@ def extract_metadata(
     if pdf_title_from_properties and len(pdf_title_from_properties.strip()) > 5:
         title = pdf_title_from_properties.strip()
     else:
-        title = re.sub(r"[_\-]+", " ", stem).strip().title()
+        # Preserve original casing from the filename — .title() mangles tickers
+        # like "BTC" → "Btc" and hyphenated terms like "ETH-USD" → "Eth-Usd".
+        title = re.sub(r"[_\-]+", " ", stem).strip()
 
     # ------------------------------------------------------------------
     # published_date
@@ -132,13 +134,14 @@ def extract_metadata(
     if not published_date and page1_text:
         published_date = _parse_date_string(page1_text[:800])
 
-    # 4. Fall back to today
+    # 4. No date found — use "unknown" rather than fabricating today's date,
+    #    which would be cited as fact and corrupt temporal filters.
     if not published_date:
         _logger.warning(
-            "metadata_date_fallback",
-            extra={"file_path": file_path, "fallback": "today"},
+            "metadata_date_unknown",
+            extra={"file_path": file_path},
         )
-        published_date = _today_iso()
+        published_date = "unknown"
 
     # ------------------------------------------------------------------
     # doc_type

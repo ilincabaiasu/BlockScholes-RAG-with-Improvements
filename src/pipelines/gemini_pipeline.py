@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.config.gemini_client import generate_text
 from src.config.settings import settings
@@ -44,7 +44,7 @@ async def run(query: str) -> QueryResult:
         response_text=response_text,
         generation_provider="gemini",
         latency_breakdown=latency,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         retrieved_chunk_ids=[],
         context_sources=[],
         reranker_scores=[],

@@ -20,7 +20,7 @@ import argparse
 import asyncio
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
 
@@ -180,7 +180,7 @@ def summarise(records: list[RunRecord]) -> list[ConfigSummary]:
 def build_report(summaries: list[ConfigSummary], use_judge: bool) -> str:
     """Render a Markdown report with the per-config table and LOO deltas."""
     lines: list[str] = ["# Ablation Results", ""]
-    lines.append(f"_Generated: {datetime.utcnow().isoformat()}Z_")
+    lines.append(f"_Generated: {datetime.now(timezone.utc).isoformat()}Z_")
     lines.append("")
 
     # Main table
@@ -290,14 +290,14 @@ async def _amain(args: argparse.Namespace) -> None:
     report = build_report(summaries, use_judge)
 
     _OUT_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     json_path = _OUT_DIR / f"results_{stamp}.json"
     md_path = _OUT_DIR / f"report_{stamp}.md"
 
     json_path.write_text(
         json.dumps(
             {
-                "generated": datetime.utcnow().isoformat() + "Z",
+                "generated": datetime.now(timezone.utc).isoformat() + "Z",
                 "records": [asdict(r) for r in records],
                 "summaries": [asdict(s) for s in summaries],
             },
