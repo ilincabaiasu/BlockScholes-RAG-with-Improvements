@@ -17,6 +17,7 @@ a confounder, which is what makes the "is it worth it?" signal precise.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -227,12 +228,68 @@ def _summarise_enhanced_configs(runs: pd.DataFrame) -> pd.DataFrame:
     return g.sort_values("mean_quality", ascending=False).reset_index(drop=True)
 
 
+_supabase_client_cache = None
+
+
+def _get_supabase():
+    """Return a cached Supabase client when credentials are available, else None."""
+    global _supabase_client_cache
+    if _supabase_client_cache is not None:
+        return _supabase_client_cache
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        return None
+    try:
+        from supabase import create_client
+        _supabase_client_cache = create_client(url, key)
+        return _supabase_client_cache
+    except Exception as exc:
+        _logger.warning("supabase_init_failed", extra={"error": str(exc)})
+        return None
+
+
+def _load_qa_supabase(client) -> dict[str, pd.DataFrame] | None:
+    try:
+        result = client.table("qa_runs").select("*").order("id").execute()
+    except Exception as exc:
+        _logger.warning("supabase_load_failed", extra={"error": str(exc)})
+        return None
+    if not result.data:
+        return None
+    runs = pd.DataFrame(result.data)
+    keep = [c for c in _QA_COLUMNS if c in runs.columns]
+    if not keep or "pipeline" not in keep:
+        return None
+    runs = runs[keep]
+    if runs.empty:
+        return None
+    return {
+        "Runs": runs,
+        "Pipelines": _summarise_pipelines(runs),
+        "Enhanced_Configs": _summarise_enhanced_configs(runs),
+    }
+
+
+def _append_qa_supabase(client, rows: list[dict]) -> dict[str, pd.DataFrame]:
+    try:
+        client.table("qa_runs").insert(rows).execute()
+        _logger.info("supabase_qa_inserted", extra={"n_rows": len(rows)})
+    except Exception as exc:
+        _logger.warning("supabase_insert_failed", extra={"error": str(exc)})
+    return _load_qa_supabase(client) or {}
+
+
 def append_qa(rows: list[dict]) -> dict[str, pd.DataFrame]:
-    """Append judged Q&A rows and rewrite the per-pipeline / per-config summaries."""
+    """Append judged Q&A rows. Uses Supabase when credentials are set, else local Excel."""
+    client = _get_supabase()
+    if client is not None:
+        return _append_qa_supabase(client, rows)
+
+    # --- local Excel fallback (dev without Supabase) ---
     new = pd.DataFrame(rows, columns=_QA_COLUMNS)
     if new.empty:
         return {}
-
     if QA_TRACKER_PATH.exists():
         try:
             old = pd.read_excel(QA_TRACKER_PATH, sheet_name="Runs")
@@ -242,7 +299,6 @@ def append_qa(rows: list[dict]) -> dict[str, pd.DataFrame]:
             runs = new
     else:
         runs = new
-
     sheets = {
         "Runs": runs,
         "Pipelines": _summarise_pipelines(runs),
@@ -259,7 +315,12 @@ def append_qa(rows: list[dict]) -> dict[str, pd.DataFrame]:
 
 
 def load_qa() -> dict[str, pd.DataFrame] | None:
-    """Read the live-Q&A tracker, or None if it has no judged data yet."""
+    """Read live-Q&A history. Uses Supabase when credentials are set, else local Excel."""
+    client = _get_supabase()
+    if client is not None:
+        return _load_qa_supabase(client)
+
+    # --- local Excel fallback ---
     if not QA_TRACKER_PATH.exists():
         return None
     try:
