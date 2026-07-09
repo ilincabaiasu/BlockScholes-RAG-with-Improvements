@@ -79,7 +79,7 @@ Context provided: {context_snippet}
 Generated response: {response}
 """
 
-GEMINI_VANILLA_SYSTEM_PROMPT = """
+VANILLA_SYSTEM_PROMPT = """
 You are a crypto research analyst. Answer the following question as
 accurately and completely as you can from your training knowledge.
 Note that your answer is not grounded in any specific documents.

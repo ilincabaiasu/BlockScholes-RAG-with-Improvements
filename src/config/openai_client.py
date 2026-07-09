@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+from io import BytesIO
 
 import openai
 
@@ -14,6 +16,57 @@ _logger = get_logger(__name__)
 oai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 _BATCH_SIZE = 100
+
+
+async def generate_text(
+    system_prompt: str,
+    user_message: str,
+    temperature: float = 0.0,
+) -> str:
+    """Generate a text response from OpenAI."""
+    response = await oai_client.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=temperature,
+        max_tokens=settings.MAX_COMPLETION_TOKENS,
+    )
+    text = response.choices[0].message.content
+    if not text:
+        raise ValueError("OpenAI returned an empty response.")
+    return text
+
+
+async def generate_vision(
+    pil_image: object,
+    prompt_text: str,
+    temperature: float = 0.0,
+) -> str:
+    """Generate a response from GPT-4o given a PIL image and a text prompt."""
+    buffer = BytesIO()
+    pil_image.save(buffer, format="PNG")  # type: ignore[union-attr]
+    b64 = base64.b64encode(buffer.getvalue()).decode()
+
+    response = await oai_client.chat.completions.create(
+        model=settings.OPENAI_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    {"type": "text", "text": prompt_text},
+                ],
+            }
+        ],
+        temperature=temperature,
+        max_tokens=settings.MAX_COMPLETION_TOKENS,
+    )
+    text = response.choices[0].message.content
+    if not text:
+        raise ValueError("OpenAI vision returned an empty response.")
+    return text
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:

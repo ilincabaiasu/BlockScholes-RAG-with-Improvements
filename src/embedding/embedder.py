@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from src.config.gemini_client import embed_texts
+from src.config.openai_client import embed_texts
 from src.config.settings import settings
 from src.utils.logger import get_logger
 from src.utils.token_counter import count_tokens

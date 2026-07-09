@@ -40,7 +40,7 @@ _QA_COLUMNS = [
     "latency_ms", "fail_flags",
 ]
 
-_PIPELINE_ORDER = {"gemini": 0, "baseline": 1, "enhanced": 2}
+_PIPELINE_ORDER = {"vanilla": 0, "gemini": 0, "baseline": 1, "enhanced": 2}
 
 # Column order for the raw Runs sheet.
 _RUN_COLUMNS = [

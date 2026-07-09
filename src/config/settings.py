@@ -6,18 +6,16 @@ class Settings(BaseSettings):
 
     # API credentials (must be set in .env)
     OPENAI_API_KEY: str
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str = ""  # no longer used; kept for backwards-compat
     COHERE_API_KEY: str
     QDRANT_URL: str
     QDRANT_API_KEY: str
 
     # Model names
-    EMBEDDING_MODEL: str = "gemini-embedding-001"
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    GEMINI_VISION_MODEL: str = "gemini-2.5-flash"
+    EMBEDDING_MODEL: str = "text-embedding-3-large"
     OPENAI_MODEL: str = "gpt-4o"
     RERANKER_MODEL: str = "rerank-english-v3.0"
-    GENERATION_PROVIDER: str = "gemini"  # "gemini" | "openai"
+    GENERATION_PROVIDER: str = "openai"
     # Ablation LLM judge. "openai" (gpt-4o) is the unbiased default — a different
     # model from GENERATION_PROVIDER. "gemini" reuses the Gemini key but, when it
     # matches the generation model, introduces self-grading bias (scores skew

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import time
 
-from src.config.gemini_client import generate_text
-from src.config.openai_client import oai_client
+from src.config.openai_client import generate_text as _generate_text_openai
 from src.config.settings import settings
 from src.generation.prompts import BASELINE_SYSTEM_PROMPT, ENHANCED_SYSTEM_PROMPT
 from src.generation.models import GenerationResult
@@ -50,26 +49,8 @@ async def generate(
     # 3. Build user message
     user_message = f"Context:\n{context}\n\nQuestion: {query}"
 
-    # 4. Route by provider
-    provider = settings.GENERATION_PROVIDER
-
-    if provider == "gemini":
-        response_text = await generate_text(system_prompt, user_message, temperature)
-
-    elif provider == "openai":
-        response = await oai_client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=temperature,
-            max_tokens=settings.MAX_COMPLETION_TOKENS,
-        )
-        response_text = response.choices[0].message.content
-
-    else:
-        raise ValueError(f"Unknown GENERATION_PROVIDER: {provider!r}")
+    # 4. Generate
+    response_text = await _generate_text_openai(system_prompt, user_message, temperature)
 
     elapsed_ms = (time.perf_counter() - t0) * 1_000
 
@@ -77,7 +58,7 @@ async def generate(
     _logger.info(
         "generate",
         extra={
-            "provider": provider,
+            "provider": "openai",
             "query_type": query_type,
             "prompt_variant": prompt_variant,
             "elapsed_ms": round(elapsed_ms, 3),
@@ -85,10 +66,9 @@ async def generate(
     )
 
     # 6. Return
-    model_name = settings.GEMINI_MODEL if provider == "gemini" else settings.OPENAI_MODEL
     return GenerationResult(
         response_text=response_text,
-        provider=provider,
-        model_name=model_name,
+        provider="openai",
+        model_name=settings.OPENAI_MODEL,
         latency_ms=elapsed_ms,
     )

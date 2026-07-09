@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from src.config.gemini_client import generate_vision
+from src.config.openai_client import generate_vision
 from src.config.settings import settings
 from src.generation.prompts import VISION_PROMPT_TEMPLATE
 from src.generation.models import GenerationResult
@@ -44,7 +44,7 @@ async def generate_from_page(
         )
         return GenerationResult(
             response_text="[Visual content unavailable for this page]",
-            provider="gemini-vision",
+            provider="openai-vision",
             source_doc=source_doc,
             source_page=page_number,
         )
@@ -75,8 +75,8 @@ async def generate_from_page(
     # 5. Return
     return GenerationResult(
         response_text=response_text,
-        provider="gemini-vision",
-        model_name=settings.GEMINI_VISION_MODEL,
+        provider="openai-vision",
+        model_name=settings.OPENAI_MODEL,
         source_page=page_number,
         source_doc=source_doc,
         latency_ms=elapsed_ms,

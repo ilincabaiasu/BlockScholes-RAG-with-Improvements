@@ -26,7 +26,6 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 _SECRET_KEYS = [
     "OPENAI_API_KEY",
-    "GEMINI_API_KEY",
     "COHERE_API_KEY",
     "QDRANT_URL",
     "QDRANT_API_KEY",
@@ -292,7 +291,7 @@ run_button = st.button("Run", type="primary", disabled=not query)
 # ---------------------------------------------------------------------------
 
 PIPELINES = [
-    ("gemini",   "🤖 Gemini Vanilla",  "No retrieval — raw model knowledge only"),
+    ("vanilla",  "🤖 GPT-4o Vanilla",  "No retrieval — raw model knowledge only"),
     ("baseline", "📄 Baseline RAG",    "Dense retrieval · fixed chunks · vanilla prompt"),
     ("enhanced", "🚀 Enhanced RAG",    "Personalised via the switches above"),
 ]
@@ -304,12 +303,12 @@ async def _run_all(query: str, enhanced_config) -> dict:
     The Enhanced pipeline runs with *enhanced_config* (the on/off switches);
     the other two ignore it.
     """
-    from src.pipelines.gemini_pipeline import run as run_gemini
+    from src.pipelines.gemini_pipeline import run as run_vanilla
     from src.pipelines.baseline_pipeline import run as run_baseline
     from src.pipelines.enhanced_pipeline import run as run_enhanced
 
     results = {}
-    for name, runner in (("gemini", run_gemini), ("baseline", run_baseline)):
+    for name, runner in (("vanilla", run_vanilla), ("baseline", run_baseline)):
         try:
             results[name] = await runner(query)
         except Exception as exc:
@@ -497,7 +496,7 @@ def _pipeline_chart(runs_df):
     # Build a human-readable "enhancements" column for the tooltip.
     # Gemini and Baseline have empty enhanced_config; give them fixed labels.
     def _enhancement_label(row):
-        if row["pipeline"] == "gemini":
+        if row["pipeline"] in ("gemini", "vanilla"):
             return "No retrieval — raw model knowledge"
         if row["pipeline"] == "baseline":
             return "Dense retrieval · fixed chunks · vanilla prompt"
@@ -513,7 +512,7 @@ def _pipeline_chart(runs_df):
     points = alt.Chart(df).mark_circle(size=150, opacity=0.7).encode(
         x=alt.X("latency_s:Q", title="Latency (s) →"),
         y=alt.Y("quality:Q", title="Judge quality / 100 →", scale=alt.Scale(domain=[0, 100])),
-        color=alt.Color("pipeline:N", title="Pipeline", sort=["gemini", "baseline", "enhanced"]),
+        color=alt.Color("pipeline:N", title="Pipeline", sort=["vanilla", "baseline", "enhanced"]),
         tooltip=[
             alt.Tooltip("pipeline:N", title="Pipeline"),
             alt.Tooltip("enhancements:N", title="Enhancements"),

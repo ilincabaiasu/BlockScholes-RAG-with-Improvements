@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from src.config.gemini_client import generate_text
+from src.config.openai_client import generate_text
 from src.config.settings import settings
-from src.generation.prompts import GEMINI_VANILLA_SYSTEM_PROMPT
+from src.generation.prompts import VANILLA_SYSTEM_PROMPT
 from src.pipelines.models import QueryResult
 from src.pipelines.query_logger import log_result
 from src.utils.logger import get_logger
@@ -33,16 +33,16 @@ async def run(query: str) -> QueryResult:
 
     with Timer("text_generate") as t:
         response_text = await generate_text(
-            GEMINI_VANILLA_SYSTEM_PROMPT, query, temperature=0.0
+            VANILLA_SYSTEM_PROMPT, query, temperature=0.0
         )
     latency["text_generate_ms"] = t.elapsed_ms
 
     result = QueryResult(
         query_id=query_id,
         original_query=query,
-        pipeline="gemini",
+        pipeline="vanilla",
         response_text=response_text,
-        generation_provider="gemini",
+        generation_provider="openai",
         latency_breakdown=latency,
         timestamp=datetime.now(timezone.utc).isoformat(),
         retrieved_chunk_ids=[],

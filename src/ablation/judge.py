@@ -156,15 +156,8 @@ async def _judge_call(user_msg: str) -> str:
     provider = settings.JUDGE_PROVIDER.lower()
 
     if provider == "gemini":
-        if not _bias_warned and settings.GENERATION_PROVIDER.lower() == "gemini":
-            _logger.warning(
-                "judge_self_grading_bias",
-                extra={"judge": settings.GEMINI_MODEL, "generation": settings.GEMINI_MODEL,
-                       "note": "Gemini grading Gemini output — treat scores as relative, not absolute."},
-            )
-            _bias_warned = True
-        # Gemini has no system role; the rubric is prepended inside generate_text.
-        return await generate_text(_RUBRIC, user_msg, temperature=0.0)
+        _logger.warning("judge_gemini_not_supported", extra={"note": "Gemini judge is disabled; falling through to OpenAI."})
+        provider = "openai"
 
     async def _call() -> str:
         response = await oai_client.chat.completions.create(

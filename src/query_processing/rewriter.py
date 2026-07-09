@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from src.config.gemini_client import generate_text
+from src.config.openai_client import generate_text
 from src.utils.logger import get_logger
 
 _logger = get_logger(__name__)
